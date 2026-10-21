@@ -11,12 +11,6 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). The root path redirects to `/dashboard`.
 
-## Current scope
-
-- Dashboard, Configure, and History routes with shared navigation.
-- Header download control is present as a placeholder.
-- User menu reveals the displayed user's name.
-- Screen bodies are intentionally empty for screen-by-screen UI development.
 
 ## Design tokens
 
