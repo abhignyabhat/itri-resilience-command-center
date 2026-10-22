@@ -106,6 +106,7 @@ function ParameterCard({ parameter, onSelectFilter }: { parameter: ParameterScor
             <col className="w-[21%]" />
             <col className="w-[21%]" />
           </colgroup>
+          {/*
           <thead className={`sticky top-0 z-10 ${tone.header}`}>
             <tr className={`h-[27px] border-b ${tone.border}`}>
               <th scope="col" className="px-3 text-left font-medium">Subparameter</th>
@@ -114,6 +115,7 @@ function ParameterCard({ parameter, onSelectFilter }: { parameter: ParameterScor
               <th scope="col" className="border-l border-itri-200/80 px-1 text-center font-medium">Trend</th>
             </tr>
           </thead>
+          */}
           <tbody>
             {parameter.subparameters.map((subparameter) => (
               <tr key={subparameter.id} className="h-[27px] border-b border-itri-200/70 last:border-b-0">

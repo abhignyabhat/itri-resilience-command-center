@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ModelStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum AssessmentStatus {
+  PLANNED
+  IN_PROGRESS
+  PROVISIONAL
+  COMPLETE
+}
+
+enum InputSource {
+  MANUAL
+}
+
+enum RemediationPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RemediationStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+enum ReportType {
+  RESILIENCE_REPORT
+  PARAMETER_SUMMARY
+  TREND_REPORT
+}
+
+model User {
+  id          String          @id @default(cuid())
+  name        String
+  email       String          @unique
+  role        UserRole        @default(EDITOR)
+  inputs      AssessmentInput[]
+  auditEvents AuditEvent[]
+  downloads   ReportDownload[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model ModelVersion {
+  id               String        @id @default(cuid())
+  version          Int           @unique
+  name             String
+  status           ModelStatus   @default(DRAFT)
+  goodThreshold    Decimal       @default(75) @db.Decimal(5, 2)
+  okayThreshold    Decimal       @default(50) @db.Decimal(5, 2)
+  parameters       Parameter[]
+  snapshots        ScoreSnapshot[]
+  createdAt        DateTime      @default(now())
+  publishedAt      DateTime?
+}
+
+model Parameter {
+  id             String       @id @default(cuid())
+  code           String
+  modelVersionId String
+  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  name           String
+  chartLabel     Json
+  weight         Decimal      @db.Decimal(5, 2)
+  sortOrder      Int
+  source         String       @default("Manual")
+  subparameters  Subparameter[]
+  results        ParameterResult[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([modelVersionId, code])
+  @@unique([modelVersionId, name])
+  @@index([modelVersionId, sortOrder])
+}
+
+model Subparameter {
+  id             String          @id @default(cuid())
+  code           String
+  parameterId    String
+  parameter      Parameter       @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+  name           String
+  weight         Decimal         @db.Decimal(5, 2)
+  sortOrder      Int
+  source         String          @default("Manual")
+  inputs         AssessmentInput[]
+  results        SubparameterResult[]
+  remediations   Remediation[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([parameterId, code])
+  @@unique([parameterId, name])
+  @@index([parameterId, sortOrder])
+}
+
+model AssessmentPeriod {
+  id           String          @id @default(cuid())
+  code         String          @unique
+  label        String
+  startsAt     DateTime
+  endsAt       DateTime
+  status       AssessmentStatus @default(PLANNED)
+  inputs       AssessmentInput[]
+  snapshots    ScoreSnapshot[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([startsAt])
+}
+
+model AssessmentInput {
+  id                  String        @id @default(cuid())
+  assessmentPeriodId  String
+  assessmentPeriod    AssessmentPeriod @relation(fields: [assessmentPeriodId], references: [id], onDelete: Cascade)
+  subparameterId      String
+  subparameter        Subparameter  @relation(fields: [subparameterId], references: [id], onDelete: Cascade)
+  score               Decimal       @db.Decimal(5, 2)
+  source              InputSource   @default(MANUAL)
+  notes               String?
+  recordedById        String?
+  recordedBy          User?         @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+  recordedAt          DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@unique([assessmentPeriodId, subparameterId])
+  @@index([assessmentPeriodId])
+}
+
+model ScoreSnapshot {
+  id                  String           @id @default(cuid())
+  assessmentPeriodId  String
+  assessmentPeriod    AssessmentPeriod @relation(fields: [assessmentPeriodId], references: [id], onDelete: Cascade)
+  modelVersionId      String
+  modelVersion        ModelVersion     @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
+  score               Decimal?         @db.Decimal(6, 3)
+  provisionalEstimate Decimal?         @db.Decimal(6, 3)
+  isProvisional       Boolean          @default(true)
+  scoredCount         Int              @default(0)
+  requiredCount       Int              @default(0)
+  parameterResults    ParameterResult[]
+  createdAt           DateTime         @default(now())
+
+  @@unique([assessmentPeriodId, modelVersionId])
+  @@index([createdAt])
+}
+
+model ParameterResult {
+  id              String             @id @default(cuid())
+  snapshotId      String
+  snapshot        ScoreSnapshot      @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  parameterId     String
+  parameter       Parameter          @relation(fields: [parameterId], references: [id], onDelete: Restrict)
+  score           Decimal?           @db.Decimal(6, 3)
+  change          Decimal?           @db.Decimal(6, 3)
+  isProvisional   Boolean            @default(true)
+  subparameterResults SubparameterResult[]
+
+  @@unique([snapshotId, parameterId])
+}
+
+model SubparameterResult {
+  id                 String          @id @default(cuid())
+  parameterResultId  String
+  parameterResult    ParameterResult @relation(fields: [parameterResultId], references: [id], onDelete: Cascade)
+  subparameterId     String
+  subparameter       Subparameter    @relation(fields: [subparameterId], references: [id], onDelete: Restrict)
+  score              Decimal?        @db.Decimal(6, 3)
+
+  @@unique([parameterResultId, subparameterId])
+}
+
+model Remediation {
+  id              String              @id @default(cuid())
+  subparameterId  String
+  subparameter    Subparameter        @relation(fields: [subparameterId], references: [id], onDelete: Cascade)
+  title           String
+  description     String
+  priority        RemediationPriority @default(MEDIUM)
+  status          RemediationStatus   @default(OPEN)
+  dueAt           DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([status, priority])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  summary    String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+model ReportDownload {
+  id             String     @id @default(cuid())
+  reportType     ReportType
+  fileName       String
+  userId         String?
+  user           User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  periodId       String?
+  downloadedAt   DateTime   @default(now())
+
+  @@index([downloadedAt])
+}

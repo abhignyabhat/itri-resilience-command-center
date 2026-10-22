@@ -6,4 +6,7 @@ dist/
 .DS_Store
 *.tsbuildinfo
 .env*
+!.env.example
+src/generated/prisma/
+.npm-cache/
 work/npm-cache/
