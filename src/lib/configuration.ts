@@ -20,19 +20,47 @@ export function configurationDto(model: Awaited<ReturnType<typeof getCurrentConf
       weight: Number(parameter.weight),
       sortOrder: parameter.sortOrder,
       source: parameter.source,
-      subparameters: parameter.subparameters.map((subparameter) => ({ id: subparameter.code, name: subparameter.name, weight: Number(subparameter.weight), sortOrder: subparameter.sortOrder, source: subparameter.source })),
+      description: parameter.description,
+      measurement: parameter.measurement,
+      subparameters: parameter.subparameters.map((subparameter) => ({
+        id: subparameter.code,
+        name: subparameter.name,
+        weight: Number(subparameter.weight),
+        sortOrder: subparameter.sortOrder,
+        source: subparameter.source,
+        description: subparameter.description,
+        measurement: subparameter.measurement,
+        measurementCriteria: subparameter.measurementCriteria.map((criterion) => ({
+          id: criterion.id,
+          description: criterion.description,
+          operator: criterion.operator,
+          value: Number(criterion.value),
+          upperValue: criterion.upperValue == null ? null : Number(criterion.upperValue),
+          score: criterion.score,
+          sortOrder: criterion.sortOrder,
+        })),
+      })),
     })),
   };
 }
 
 export async function getCurrentConfiguration() {
-  const model = await prisma.modelVersion.findFirst({
-    where: { status: "PUBLISHED" },
-    orderBy: { version: "desc" },
-    include: { parameters: { orderBy: { sortOrder: "asc" }, include: { subparameters: { orderBy: { sortOrder: "asc" } } } } },
-  });
-  if (!model) throw new Error("NOT_FOUND");
-  return model;
+  const include = {
+    parameters: {
+      orderBy: { sortOrder: "asc" as const },
+      include: {
+        subparameters: {
+          orderBy: { sortOrder: "asc" as const },
+          include: { measurementCriteria: { orderBy: { sortOrder: "asc" as const } } },
+        },
+      },
+    },
+  };
+  const draft = await prisma.modelVersion.findFirst({ where: { status: "DRAFT" }, orderBy: { version: "desc" }, include });
+  if (draft) return draft;
+  const published = await prisma.modelVersion.findFirst({ where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, include });
+  if (!published) throw new Error("NOT_FOUND");
+  return published;
 }
 
 export async function saveConfigurationDraft(payload: ConfigurationPayload) {
@@ -60,12 +88,24 @@ export async function saveConfigurationDraft(payload: ConfigurationPayload) {
           weight: parameter.weight,
           sortOrder: parameter.sortOrder || parameterIndex,
           source: parameter.source,
+          description: parameter.description,
+          measurement: parameter.measurement,
           subparameters: { create: parameter.subparameters.map((subparameter, subparameterIndex) => ({
             code: subparameter.id,
             name: subparameter.name,
             weight: subparameter.weight,
             sortOrder: subparameter.sortOrder || subparameterIndex,
             source: subparameter.source,
+            description: subparameter.description,
+            measurement: subparameter.measurement,
+            measurementCriteria: { create: subparameter.measurementCriteria.map((criterion, criterionIndex) => ({
+              description: criterion.description,
+              operator: criterion.operator,
+              value: criterion.value,
+              upperValue: criterion.upperValue ?? null,
+              score: criterion.score,
+              sortOrder: criterion.sortOrder ?? criterionIndex,
+            })) },
           })) },
         },
       });
@@ -76,7 +116,17 @@ export async function saveConfigurationDraft(payload: ConfigurationPayload) {
     });
     return tx.modelVersion.findUniqueOrThrow({
       where: { id: draft.id },
-      include: { parameters: { orderBy: { sortOrder: "asc" }, include: { subparameters: { orderBy: { sortOrder: "asc" } } } } },
+      include: {
+        parameters: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            subparameters: {
+              orderBy: { sortOrder: "asc" },
+              include: { measurementCriteria: { orderBy: { sortOrder: "asc" } } },
+            },
+          },
+        },
+      },
     });
   });
 }

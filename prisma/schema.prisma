@@ -29,6 +29,15 @@ enum InputSource {
   MANUAL
 }
 
+enum MeasurementOperator {
+  GT
+  GTE
+  EQ
+  LT
+  LTE
+  BETWEEN
+}
+
 enum RemediationPriority {
   HIGH
   MEDIUM
@@ -84,6 +93,8 @@ model Parameter {
   source         String       @default("Manual")
   subparameters  Subparameter[]
   results        ParameterResult[]
+  description    String          @default("") @db.Text
+  measurement    String          @default("") @db.Text
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -101,6 +112,9 @@ model Subparameter {
   weight         Decimal         @db.Decimal(5, 2)
   sortOrder      Int
   source         String          @default("Manual")
+  description    String          @default("") @db.Text
+  measurement    String          @default("") @db.Text
+  measurementCriteria MeasurementCriterion[]
   inputs         AssessmentInput[]
   results        SubparameterResult[]
   remediations   Remediation[]
@@ -110,6 +124,22 @@ model Subparameter {
   @@unique([parameterId, code])
   @@unique([parameterId, name])
   @@index([parameterId, sortOrder])
+}
+
+model MeasurementCriterion {
+  id             String       @id @default(cuid())
+  subparameterId String
+  subparameter   Subparameter @relation(fields: [subparameterId], references: [id], onDelete: Cascade)
+  description    String       @db.Text
+  operator       MeasurementOperator @default(BETWEEN)
+  value          Decimal      @default(0) @db.Decimal(12, 4)
+  upperValue     Decimal?     @db.Decimal(12, 4)
+  score          Int
+  sortOrder      Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([subparameterId, sortOrder])
 }
 
 model AssessmentPeriod {
@@ -134,6 +164,7 @@ model AssessmentInput {
   subparameterId      String
   subparameter        Subparameter  @relation(fields: [subparameterId], references: [id], onDelete: Cascade)
   score               Decimal       @db.Decimal(5, 2)
+  measuredValue       Decimal?      @db.Decimal(12, 4)
   source              InputSource   @default(MANUAL)
   notes               String?
   recordedById        String?

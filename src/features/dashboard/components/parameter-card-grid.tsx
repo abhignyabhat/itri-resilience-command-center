@@ -5,62 +5,8 @@ type Props = {
   onSelectFilter: (parameterId: string, subparameterId?: string) => void;
 };
 
-const parameterTones: Record<string, { border: string; header: string; icon: string; title: string }> = {
-  availability: {
-    border: "border-parameter-availability/60",
-    header: "bg-parameter-availability/10",
-    icon: "bg-parameter-availability",
-    title: "text-parameter-availability",
-  },
-  security: {
-    border: "border-parameter-security/60",
-    header: "bg-parameter-security/10",
-    icon: "bg-parameter-security",
-    title: "text-parameter-security",
-  },
-  integrity: {
-    border: "border-parameter-integrity/60",
-    header: "bg-parameter-integrity/10",
-    icon: "bg-parameter-integrity",
-    title: "text-parameter-integrity",
-  },
-  governance: {
-    border: "border-parameter-governance/60",
-    header: "bg-parameter-governance/10",
-    icon: "bg-parameter-governance",
-    title: "text-parameter-governance",
-  },
-  reliability: {
-    border: "border-parameter-reliability/60",
-    header: "bg-parameter-reliability/10",
-    icon: "bg-parameter-reliability",
-    title: "text-parameter-reliability",
-  },
-  "business-continuity": {
-    border: "border-parameter-continuity/60",
-    header: "bg-parameter-continuity/10",
-    icon: "bg-parameter-continuity",
-    title: "text-parameter-continuity",
-  },
-  modularity: {
-    border: "border-parameter-modularity/60",
-    header: "bg-parameter-modularity/10",
-    icon: "bg-parameter-modularity",
-    title: "text-parameter-modularity",
-  },
-  scalability: {
-    border: "border-parameter-scalability/60",
-    header: "bg-parameter-scalability/10",
-    icon: "bg-parameter-scalability",
-    title: "text-parameter-scalability",
-  },
-  others: {
-    border: "border-parameter-other/60",
-    header: "bg-parameter-other/10",
-    icon: "bg-parameter-other",
-    title: "text-parameter-other",
-  },
-};
+const scoreGoodThreshold = 75;
+const scoreOkayThreshold = 50;
 
 export function ParameterCardGrid({ parameters, onSelectFilter }: Props) {
   return (
@@ -73,26 +19,31 @@ export function ParameterCardGrid({ parameters, onSelectFilter }: Props) {
 }
 
 function ParameterCard({ parameter, onSelectFilter }: { parameter: ParameterScore; onSelectFilter: Props["onSelectFilter"] }) {
-  const tone = parameterTones[parameter.id] ?? parameterTones.others;
-  const positiveChange = parameter.change >= 0;
+  const changeTone = parameter.change > 0 ? "text-score-good" : parameter.change < 0 ? "text-score-bad" : "text-itri-700";
+  const changeArrow = parameter.change > 0 ? "↑" : parameter.change < 0 ? "↓" : "→";
+  const scoreTone = parameter.score >= scoreGoodThreshold
+    ? "text-score-good"
+    : parameter.score >= scoreOkayThreshold
+      ? "text-score-okay"
+      : "text-score-bad";
 
   return (
-    <article className={`flex h-[162px] min-w-0 flex-col overflow-hidden rounded-md border bg-white/80 shadow-sm ${tone.border}`}>
-      <header className={`flex h-[38px] shrink-0 items-center gap-2 border-b px-3 ${tone.border} ${tone.header}`}>
-        <span className={`grid size-6 shrink-0 place-items-center rounded-full text-white ${tone.icon}`}>
+    <article className="flex h-[162px] min-w-0 flex-col overflow-hidden rounded-md border border-itri-200 bg-white/80 shadow-sm">
+      <header className="flex h-[38px] shrink-0 items-center gap-2 border-b border-itri-200 bg-itri-100/70 px-3">
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-itri-700 text-white">
           <ParameterIcon type={iconForParameter(parameter.id)} />
         </span>
-        <h2 className={`min-w-0 truncate text-sm font-bold ${tone.title}`} title={parameter.name}>
+        <h2 className="min-w-0 truncate text-sm font-bold text-itri-800" title={parameter.name}>
           <button type="button" onClick={() => onSelectFilter(parameter.id)} className="truncate text-left hover:underline focus-visible:underline">
             {parameter.name}
           </button>
         </h2>
-        <span aria-label={`${positiveChange ? "Up" : "Down"} ${Math.abs(parameter.change)} points`} className={`flex shrink-0 items-center gap-1 text-sm font-bold ${positiveChange ? "text-score-good" : "text-score-bad"}`}>
-          <span aria-hidden="true" className="text-lg leading-none">{positiveChange ? "↑" : "↓"}</span>
-          {positiveChange ? "+" : "−"}{Math.abs(parameter.change)}
+        <span aria-label={`${parameter.change > 0 ? "Up" : parameter.change < 0 ? "Down" : "Unchanged"} ${Math.abs(parameter.change)} points`} className={`flex shrink-0 items-center gap-1 text-sm font-bold ${changeTone}`}>
+          <span aria-hidden="true" className="text-lg leading-none">{changeArrow}</span>
+          {parameter.change > 0 ? "+" : parameter.change < 0 ? "−" : ""}{Math.abs(parameter.change)}
         </span>
         <div className="ml-auto flex shrink-0 items-baseline gap-1 text-itri-900">
-          <span className="text-lg font-bold leading-none">{parameter.score}</span>
+          <span className={`text-lg font-bold leading-none ${scoreTone}`}>{parameter.score}</span>
           <span className="text-[10px] font-semibold">/100</span>
           <span className="ml-1 text-[10px] text-itri-700">({parameter.weight}%)</span>
         </div>

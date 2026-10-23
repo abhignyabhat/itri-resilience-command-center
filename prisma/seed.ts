@@ -17,6 +17,65 @@ const parameterSeeds = [
   { id: "others", name: "Others", label: ["Others"], baseWeight: 6, score: 69, source: "Manual", children: ["Cost", "Vendor", "Environment", "Skills", "Documentation"] },
 ];
 
+
+const parameterDescriptions: Record<string, string> = {
+  availability: "Measures whether critical systems and services remain accessible and recover within agreed service targets.",
+  security: "Measures safeguards that protect services, infrastructure, and information from security threats.",
+  integrity: "Measures the accuracy, consistency, and traceability of business and operational data.",
+  governance: "Measures whether resilience responsibilities, policies, risks, and oversight are clearly established.",
+  reliability: "Measures service stability and the ability to detect, respond to, and learn from operational failures.",
+  "business-continuity": "Measures preparedness to sustain critical operations and restore them after disruption.",
+  modularity: "Measures how independently systems can be changed, maintained, and integrated.",
+  scalability: "Measures whether systems can handle changing demand without unacceptable service degradation.",
+  others: "Measures supporting capabilities that contribute to resilient and sustainable service delivery.",
+};
+
+const subparameterDescriptions: Record<string, string> = {
+  "availability-1": "Tracks the percentage of time systems deliver the required service during the assessment period.",
+  "availability-2": "Assesses whether recovery plans restore critical services within approved recovery objectives.",
+  "availability-3": "Assesses response time, throughput, and resource headroom under normal and peak load.",
+  "availability-4": "Assesses whether redundant components can take over successfully when a primary component fails.",
+  "availability-5": "Assesses whether capacity forecasts anticipate demand and trigger timely scaling actions.",
+  "security-1": "Assesses whether access is authorized, least-privileged, and reviewed on a regular schedule.",
+  "security-2": "Assesses how promptly relevant threats are detected, triaged, and escalated.",
+  "security-3": "Assesses the coverage and timeliness of required security control and compliance evidence.",
+  "security-4": "Assesses whether vulnerabilities are identified, prioritized, and remediated within target times.",
+  "security-5": "Counts priority-one incidents that directly affect the business service or its users during the assessment period.",
+  "security-6": "Assesses workforce completion and effectiveness of role-appropriate security training.",
+};
+
+const genericCriteria = [
+  { description: "80 or above", operator: "GTE" as const, value: 80, upperValue: null, score: 5 },
+  { description: "60 to under 80", operator: "BETWEEN" as const, value: 60, upperValue: 80, score: 4 },
+  { description: "40 to under 60", operator: "BETWEEN" as const, value: 40, upperValue: 60, score: 3 },
+  { description: "20 to under 40", operator: "BETWEEN" as const, value: 20, upperValue: 40, score: 2 },
+  { description: "Below 20", operator: "LT" as const, value: 20, upperValue: null, score: 1 },
+];
+
+function criteriaFor(code: string) {
+  if (code === "availability-1") return [
+    { description: "Uptime > 99.99%", operator: "GT" as const, value: 99.99, upperValue: null, score: 5 },
+    { description: "Uptime from 99.9% to under 99.99%", operator: "BETWEEN" as const, value: 99.9, upperValue: 99.99, score: 4 },
+    { description: "Uptime from 99% to under 99.9%", operator: "BETWEEN" as const, value: 99, upperValue: 99.9, score: 3 },
+    { description: "Uptime from 95% to under 99%", operator: "BETWEEN" as const, value: 95, upperValue: 99, score: 2 },
+    { description: "Uptime < 95%", operator: "LT" as const, value: 95, upperValue: null, score: 1 },
+  ];
+  if (code === "security-5") return [
+    { description: "Zero P1 incidents", operator: "EQ" as const, value: 0, upperValue: null, score: 5 },
+    { description: "1 P1 incident", operator: "EQ" as const, value: 1, upperValue: null, score: 4 },
+    { description: "2 P1 incidents", operator: "EQ" as const, value: 2, upperValue: null, score: 3 },
+    { description: "3 P1 incidents", operator: "EQ" as const, value: 3, upperValue: null, score: 2 },
+    { description: "More than 3 P1 incidents", operator: "GT" as const, value: 3, upperValue: null, score: 1 },
+  ];
+  return genericCriteria;
+}
+
+function measurementFor(code: string, name: string) {
+  if (code === "availability-1") return "Measured as the uptime percentage recorded for the systems over the assessment period.";
+  if (code === "security-5") return "Measured as the number of P1 incidents that directly impacted the business service or its users during the assessment period.";
+  return `Measured as a normalized 0–100 performance value against the approved target and service requirements; customize criteria to use a different unit or scale.`;
+}
+
 async function main() {
   await prisma.reportDownload.deleteMany();
   await prisma.auditEvent.deleteMany();
@@ -50,6 +109,8 @@ async function main() {
           weight: roundedWeights[parameterIndex],
           sortOrder: parameterIndex,
           source: parameter.source,
+          description: parameterDescriptions[parameter.id] ?? `Measures the resilience capability and outcomes covered by ${parameter.name}.`,
+          measurement: "Calculated as the weighted average of its subparameter scores using their configured weights.",
           subparameters: {
             create: parameter.children.map((name, subIndex) => ({
               code: `${parameter.id}-${subIndex + 1}`,
@@ -57,6 +118,9 @@ async function main() {
               weight: parameter.children.length === 6 ? [20, 20, 15, 15, 15, 15][subIndex] : Number((100 / parameter.children.length).toFixed(2)),
               sortOrder: subIndex,
               source: parameter.source,
+              description: subparameterDescriptions[`${parameter.id}-${subIndex + 1}`] ?? `Assesses the effectiveness of ${name.toLowerCase()} for ${parameter.name.toLowerCase()}.`,
+              measurement: measurementFor(`${parameter.id}-${subIndex + 1}`, name),
+              measurementCriteria: { create: criteriaFor(`${parameter.id}-${subIndex + 1}`).map((criterion, criterionIndex) => ({ ...criterion, sortOrder: criterionIndex })) },
             })),
           },
         })),

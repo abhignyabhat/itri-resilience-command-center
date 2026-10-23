@@ -2,42 +2,132 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { dashboardKpiData } from "@/features/dashboard/data/kpi-data";
-import type { ModelConfiguration, ModelParameter, ModelSubparameter } from "@/features/configure/types";
+import type { ModelConfiguration, ModelParameter, ModelSubparameter, MeasurementOperator } from "@/features/configure/types";
 import { ChangeHistoryTab } from "@/features/configure/components/change-history-tab";
 
 type ConfigureTab = "model" | "history";
 
-const STORAGE_KEY = "itri-model-configuration";
-const parameterSources: Record<string, string> = {
-  availability: "SolarWinds",
-  security: "Splunk",
-  integrity: "Datadog",
-  governance: "Weighted Avg",
-  reliability: "Datadog",
-  "business-continuity": "Manual",
-  modularity: "Splunk",
-  scalability: "Datadog",
-  others: "Manual",
+const scoreBands: Record<string, Array<{ description: string; operator: MeasurementOperator; value: number; upperValue: number | null; score: number }>> = {
+  uptime: [
+    { description: "Uptime > 99.99%", operator: "GT", value: 99.99, upperValue: null, score: 5 },
+    { description: "Uptime from 99.9% to under 99.99%", operator: "BETWEEN", value: 99.9, upperValue: 99.99, score: 4 },
+    { description: "Uptime from 99% to under 99.9%", operator: "BETWEEN", value: 99, upperValue: 99.9, score: 3 },
+    { description: "Uptime from 95% to under 99%", operator: "BETWEEN", value: 95, upperValue: 99, score: 2 },
+    { description: "Uptime < 95%", operator: "LT", value: 95, upperValue: null, score: 1 },
+  ],
+  "incident response": [
+    { description: "Zero P1 incidents", operator: "EQ", value: 0, upperValue: null, score: 5 },
+    { description: "1 P1 incident", operator: "EQ", value: 1, upperValue: null, score: 4 },
+    { description: "2 P1 incidents", operator: "EQ", value: 2, upperValue: null, score: 3 },
+    { description: "3 P1 incidents", operator: "EQ", value: 3, upperValue: null, score: 2 },
+    { description: "More than 3 P1 incidents", operator: "GT", value: 3, upperValue: null, score: 1 },
+  ],
+};
+
+const genericCriteria = [
+  { description: "80 or above", operator: "GTE" as const, value: 80, upperValue: null, score: 5 },
+  { description: "60 to under 80", operator: "BETWEEN" as const, value: 60, upperValue: 80, score: 4 },
+  { description: "40 to under 60", operator: "BETWEEN" as const, value: 40, upperValue: 60, score: 3 },
+  { description: "20 to under 40", operator: "BETWEEN" as const, value: 20, upperValue: 40, score: 2 },
+  { description: "Below 20", operator: "LT" as const, value: 20, upperValue: null, score: 1 },
+];
+
+const parameterDescriptions: Record<string, string> = {
+  availability: "Measures whether critical systems and services remain accessible and recover within agreed service targets.",
+  security: "Measures safeguards that protect services, infrastructure, and information from security threats.",
+  integrity: "Measures the accuracy, consistency, and traceability of business and operational data.",
+  governance: "Measures whether resilience responsibilities, policies, risks, and oversight are clearly established.",
+  reliability: "Measures service stability and the ability to detect, respond to, and learn from operational failures.",
+  "business-continuity": "Measures preparedness to sustain critical operations and restore them after disruption.",
+  modularity: "Measures how independently systems can be changed, maintained, and integrated.",
+  scalability: "Measures whether systems can handle changing demand without unacceptable service degradation.",
+  others: "Measures supporting capabilities that contribute to resilient and sustainable service delivery.",
+};
+
+const subparameterDescriptions: Record<string, string> = {
+  "availability-1": "Tracks the percentage of time systems deliver the required service during the assessment period.",
+  "availability-2": "Assesses whether recovery plans restore critical services within approved recovery objectives.",
+  "availability-3": "Assesses response time, throughput, and resource headroom under normal and peak load.",
+  "availability-4": "Assesses whether redundant components can take over successfully when a primary component fails.",
+  "availability-5": "Assesses whether capacity forecasts anticipate demand and trigger timely scaling actions.",
+  "security-1": "Assesses whether access is authorized, least-privileged, and reviewed on a regular schedule.",
+  "security-2": "Assesses how promptly relevant threats are detected, triaged, and escalated.",
+  "security-3": "Assesses the coverage and timeliness of required security control and compliance evidence.",
+  "security-4": "Assesses whether vulnerabilities are identified, prioritized, and remediated within target times.",
+  "security-5": "Counts priority-one incidents that directly affect the business service or its users during the assessment period.",
+  "security-6": "Assesses workforce completion and effectiveness of role-appropriate security training.",
+  "integrity-1": "Assesses the completeness, accuracy, and validity of data used by critical services.",
+  "integrity-2": "Assesses whether application controls prevent or detect unauthorized or invalid changes.",
+  "integrity-3": "Assesses whether changes are reviewed, tested, approved, and traceable before release.",
+  "integrity-4": "Assesses whether backups are verified and can restore consistent, usable data.",
+  "integrity-5": "Assesses whether important actions and data changes are recorded in reviewable audit trails.",
+  "governance-1": "Assesses whether current resilience policies are approved, communicated, and followed.",
+  "governance-2": "Assesses whether resilience risks are identified, owned, and tracked through treatment.",
+  "governance-3": "Assesses whether independent reviews identify issues and verify corrective actions.",
+  "governance-4": "Assesses whether accountable owners are assigned for critical services and controls.",
+  "governance-5": "Assesses whether leaders review resilience performance, risks, and actions at planned intervals.",
+  "reliability-1": "Assesses the health, redundancy, and maintenance state of infrastructure supporting critical services.",
+  "reliability-2": "Assesses application availability, error rates, and service-level objective performance.",
+  "reliability-3": "Assesses monitoring coverage and whether alerts provide actionable early warning.",
+  "reliability-4": "Assesses how quickly incidents are acknowledged, escalated, and mitigated.",
+  "reliability-5": "Assesses achieved service uptime against the agreed availability target.",
+  "reliability-6": "Assesses whether incidents result in documented reviews and completed corrective actions.",
+  "business-continuity-1": "Assesses whether recovery capabilities meet the approved disaster recovery objectives.",
+  "business-continuity-2": "Assesses whether business impact analyses are current and identify critical dependencies.",
+  "business-continuity-3": "Assesses the completion and success of planned recovery exercises.",
+  "business-continuity-4": "Assesses whether continuity plans are current, actionable, and available to responsible teams.",
+  "business-continuity-5": "Assesses whether crisis roles, communications, and decisions are exercised and understood.",
+  "modularity-1": "Assesses the ability to provision, change, or recover compute resources independently.",
+  "modularity-2": "Assesses the ability to scale, replace, and recover storage without disrupting services.",
+  "modularity-3": "Assesses whether network components and routes can be changed or recovered independently.",
+  "modularity-4": "Assesses separation of system components and the impact of changes across boundaries.",
+  "modularity-5": "Assesses the stability and recoverability of integrations between services and external systems.",
+  "scalability-1": "Assesses whether data volume growth is forecast and handled within performance targets.",
+  "scalability-2": "Assesses whether applications can handle rising workload while meeting service objectives.",
+  "scalability-3": "Assesses whether infrastructure can expand or contract to meet workload demand.",
+  "scalability-4": "Assesses whether automated capacity controls respond safely to workload changes.",
+  "scalability-5": "Assesses whether demand forecasts and load tests inform capacity plans.",
+  "others-1": "Assesses whether service costs are monitored and sustainable resilience choices are made.",
+  "others-2": "Assesses supplier resilience, dependency visibility, and contingency arrangements.",
+  "others-3": "Assesses whether environmental conditions and dependencies are monitored and managed.",
+  "others-4": "Assesses whether teams have the skills and coverage required to operate and recover services.",
+  "others-5": "Assesses whether operational procedures and system knowledge are complete and maintained.",
 };
 
 const initialModel: ModelConfiguration = {
-  parameters: dashboardKpiData.parameterScores.map((parameter) => ({
+  name: "ITRI Scoring Model",
+  status: "DRAFT",
+  goodThreshold: 75,
+  okayThreshold: 50,
+  parameters: dashboardKpiData.parameterScores.map((parameter, parameterIndex) => ({
     id: parameter.id,
     name: parameter.name,
+    chartLabel: parameter.chartLabel,
     weight: parameter.weight,
     score: parameter.score,
-    source: parameterSources[parameter.id] ?? "Weighted Avg",
-    subparameters: parameter.subparameters.map((subparameter, index) => ({
-      id: subparameter.id,
-      name: subparameter.name,
-      weight: subparameter.weightage ?? 0,
-      score: subparameter.score ?? 0,
-      source: (parameter.id === "availability" && index === 1)
-        || (parameter.id === "integrity" && index === 1)
-        || (parameter.id === "business-continuity" && index === 2)
-        ? "Manual"
-        : parameterSources[parameter.id] ?? "Weighted Avg",
-    })),
+    source: "Manual",
+    sortOrder: parameterIndex,
+    description: parameterDescriptions[parameter.id] ?? `Measures the resilience capability and outcomes covered by ${parameter.name}.`,
+    measurement: "Calculated as the weighted average of its subparameter scores using their configured weights.",
+    subparameters: parameter.subparameters.map((subparameter, index) => {
+      const code = subparameter.id;
+      const rubric = scoreBands[subparameter.name.toLowerCase()] ?? genericCriteria;
+      return {
+        id: code,
+        name: subparameter.name,
+        weight: subparameter.weightage ?? 0,
+        score: subparameter.score ?? 0,
+        source: "Manual",
+        sortOrder: index,
+        description: subparameterDescriptions[code] ?? `Assesses the effectiveness of ${subparameter.name.toLowerCase()} for ${parameter.name.toLowerCase()}.`,
+        measurement: code === "availability-1"
+          ? "Measured as the uptime percentage recorded for the systems over the assessment period."
+          : code === "security-5"
+            ? "Measured as the number of P1 incidents that directly impacted the business service or its users during the assessment period."
+            : `Measured as a normalized 0–100 performance value against the approved target and service requirements; customize criteria to use a different unit or scale.`,
+        measurementCriteria: rubric.map((criterion, criterionIndex) => ({ ...criterion, id: `${code}-criterion-${criterionIndex + 1}`, sortOrder: criterionIndex })),
+      };
+    }),
   })),
 };
 
@@ -47,23 +137,81 @@ export function ConfigureScreen() {
   const [model, setModel] = useState<ModelConfiguration>(initialModel);
   const [expanded, setExpanded] = useState<string[]>(["availability", "security"]);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState(false);
+  const [draftAvailable, setDraftAvailable] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as ModelConfiguration;
-      if (Array.isArray(parsed.parameters)) setModel(parsed);
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    let active = true;
+    fetch("/api/v1/configuration")
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error?.message ?? "Could not load the configuration.");
+        return payload.data as ModelConfiguration;
+      })
+      .then((configuration) => {
+        if (!active) return;
+        const scoreByParameter = new Map(dashboardKpiData.parameterScores.map((item) => [item.id, item]));
+        setDraftAvailable(configuration.status === "DRAFT");
+        setModel({
+          ...configuration,
+          parameters: configuration.parameters.map((parameter) => {
+            const scoreData = scoreByParameter.get(parameter.id);
+            const subScoreById = new Map(scoreData?.subparameters.map((item) => [item.id, item.score]) ?? []);
+            return {
+              ...parameter,
+              score: scoreData?.score ?? 0,
+              subparameters: parameter.subparameters.map((subparameter) => ({
+                ...subparameter,
+                score: subScoreById.get(subparameter.id) ?? 0,
+              })),
+            };
+          }),
+        });
+        setError(null);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : "Could not load the configuration.");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
-  function saveChanges() {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
-    setEditing(false);
-    setSavedNotice(true);
-    window.setTimeout(() => setSavedNotice(false), 2500);
+  async function saveChanges() {
+    setError(null);
+    try {
+      const response = await fetch("/api/v1/configuration", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(model),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not save the configuration.");
+      setDraftAvailable(true);
+      setEditing(false);
+      setSavedNotice(true);
+      window.setTimeout(() => setSavedNotice(false), 2500);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save the configuration.");
+    }
+  }
+
+  async function publishDraft() {
+    setError(null);
+    setPublishing(true);
+    try {
+      const response = await fetch("/api/v1/configuration/publish", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error?.message ?? "Could not publish the configuration.");
+      setDraftAvailable(false);
+      setSavedNotice(true);
+      window.setTimeout(() => setSavedNotice(false), 2500);
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Could not publish the configuration.");
+    } finally {
+      setPublishing(false);
+    }
   }
 
   function updateParameter(parameterId: string, changes: Partial<ModelParameter>) {
@@ -86,7 +234,7 @@ export function ConfigureScreen() {
     const id = `parameter-${crypto.randomUUID()}`;
     setModel((current) => ({
       ...current,
-      parameters: [...current.parameters, { id, name: "New Parameter", weight: 0, score: 0, source: "Manual", subparameters: [] }],
+      parameters: [...current.parameters, { id, name: "New Parameter", chartLabel: ["New Parameter"], weight: 0, score: 0, source: "Manual", sortOrder: current.parameters.length, description: "Describe the resilience capability this parameter covers.", measurement: "Describe how this parameter score is calculated.", subparameters: [] }],
     }));
     setExpanded((current) => [...current, id]);
   }
@@ -96,7 +244,7 @@ export function ConfigureScreen() {
     setModel((current) => ({
       ...current,
       parameters: current.parameters.map((parameter) => parameter.id === parameterId
-        ? { ...parameter, subparameters: [...parameter.subparameters, { id, name: "New Subparameter", weight: 0, score: 0, source: "Manual" }] }
+        ? { ...parameter, subparameters: [...parameter.subparameters, { id, name: "New Subparameter", weight: 0, score: 0, source: "Manual", sortOrder: parameter.subparameters.length, description: "Describe what this scoring item evaluates.", measurement: "Describe how this item is measured.", measurementCriteria: [] }] }
         : parameter),
     }));
     setExpanded((current) => current.includes(parameterId) ? current : [...current, parameterId]);
@@ -139,10 +287,11 @@ export function ConfigureScreen() {
           </div>
           {tab === "model" && (
             <div className="flex shrink-0 items-center gap-3">
-              {savedNotice && <span role="status" className="hidden text-xs text-score-good sm:inline">Saved on this device</span>}
+              {savedNotice && <span role="status" className="hidden text-xs text-score-good sm:inline">Saved to database</span>}
+              {!editing && draftAvailable && <button type="button" disabled={publishing || loading} onClick={() => { void publishDraft(); }} className="inline-flex items-center justify-center rounded-md border border-itri-200 bg-white px-3 py-2 text-sm font-semibold text-itri-800 shadow-sm hover:bg-itri-50 disabled:opacity-50">{publishing ? "Publishing…" : "Publish"}</button>}
               <button
                 type="button"
-                onClick={editing ? saveChanges : () => setEditing(true)}
+                onClick={editing ? () => { void saveChanges(); } : () => setEditing(true)}
                 className={`inline-flex min-w-24 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${editing ? "border-itri-700 bg-itri-700 text-white hover:bg-itri-800" : "border-itri-200 bg-white text-itri-800 hover:bg-itri-50"}`}
               >
                 {editing ? <SaveIcon /> : <EditIcon />}
@@ -152,22 +301,25 @@ export function ConfigureScreen() {
           )}
         </header>
 
+        {error && <p role="alert" className="mt-3 rounded-md bg-score-bad-soft px-3 py-2 text-sm text-score-bad">{error}</p>}
         {tab === "model" ? (
           <div className="flex min-h-0 flex-1 flex-col pt-3">
             <div className="model-structure-scroll min-h-0 flex-1 overflow-auto rounded-t-md border border-itri-200">
-              <table className="w-full min-w-[700px] table-fixed border-collapse text-sm text-itri-800">
+              <table className="w-full min-w-[1050px] table-fixed border-collapse text-sm text-itri-800">
                 <colgroup>
-                  <col className="w-[44%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[17%]" />
-                  <col />
+                  <col className="w-[22%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[37%]" />
                 </colgroup>
                 <thead className="sticky top-0 z-20 bg-itri-50 text-left text-itri-800">
                   <tr className="h-11 border-b border-itri-200">
                     <th scope="col" className="px-4 font-semibold">Name</th>
                     <th scope="col" className="border-l border-itri-200 px-4 font-semibold">Weight %</th>
                     <th scope="col" className="border-l border-itri-200 px-4 font-semibold">Score</th>
-                    <th scope="col" className="border-l border-itri-200 px-4 font-semibold">Source</th>
+                    <th scope="col" className="border-l border-itri-200 px-4 font-semibold">Description</th>
+                    <th scope="col" className="border-l border-itri-200 px-4 font-semibold">Measurement</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -182,8 +334,9 @@ export function ConfigureScreen() {
                     <td className="border-l border-itri-200 px-4">100%</td>
                     <td className="border-l border-itri-200 px-4">{dashboardKpiData.currentIndex.score}</td>
                     <td className="border-l border-itri-200 px-4 text-itri-600">—</td>
+                    <td className="border-l border-itri-200 px-4 text-itri-600">—</td>
                   </tr>
-                  {model.parameters.map((parameter) => (
+                  {loading ? <tr><td colSpan={5} className="px-4 py-8 text-center text-itri-600">Loading configuration…</td></tr> : model.parameters.map((parameter) => (
                     <ParameterRows
                       key={parameter.id}
                       parameter={parameter}
@@ -259,10 +412,11 @@ function ParameterRows({
         </th>
         <td className="border-l border-itri-200 px-4 font-semibold"><EditableWeight value={parameter.weight} editing={editing} label={`${parameter.name} weight`} onChange={(weight) => onUpdateParameter({ weight })} /></td>
         <td className="border-l border-itri-200 px-4 font-semibold">{parameter.score}</td>
-        <td className="border-l border-itri-200 px-4">{parameter.source}</td>
+        <td className="border-l border-itri-200 p-2 align-top"><DescriptionField value={parameter.description} editing={editing} label={`${parameter.name} description`} onChange={(description) => onUpdateParameter({ description })} /></td>
+        <td className="border-l border-itri-200 p-2 align-top"><DescriptionField value={parameter.measurement} editing={editing} label={`${parameter.name} measurement`} onChange={(measurement) => onUpdateParameter({ measurement })} /></td>
       </tr>
       {expanded && parameter.subparameters.map((subparameter, index) => (
-        <tr key={subparameter.id} className="h-12 border-b border-itri-100 bg-white/20">
+        <tr key={subparameter.id} className="border-b border-itri-100 bg-white/20">
           <th scope="row" className="px-4 text-left font-normal">
             <div className="ml-10 flex min-w-0 items-center gap-3">
               <span aria-hidden="true" className="w-6 shrink-0 border-t border-itri-200" />
@@ -281,10 +435,88 @@ function ParameterRows({
               ? <NumberInput value={subparameter.score} label={`${subparameter.name} score`} onChange={(score) => onUpdateSubparameter(subparameter.id, { score })} />
               : subparameter.score}
           </td>
-          <td className="border-l border-itri-200 px-4">{subparameter.source}</td>
+          <td className="border-l border-itri-200 p-2 align-top"><DescriptionField value={subparameter.description} editing={editing} label={`${subparameter.name} description`} onChange={(description) => onUpdateSubparameter(subparameter.id, { description })} /></td>
+          <td className="border-l border-itri-200 p-2 align-top">
+            <MeasurementEditor
+              measurement={subparameter.measurement}
+              criteria={subparameter.measurementCriteria}
+              editing={editing}
+              label={`${subparameter.name} measurement`}
+              onMeasurementChange={(measurement) => onUpdateSubparameter(subparameter.id, { measurement })}
+              onCriteriaChange={(measurementCriteria) => onUpdateSubparameter(subparameter.id, { measurementCriteria })}
+            />
+          </td>
         </tr>
       ))}
     </>
+  );
+}
+
+function DescriptionField({ value, editing, label, onChange }: { value: string; editing: boolean; label: string; onChange: (value: string) => void }) {
+  if (!editing) return <p className="line-clamp-3 whitespace-normal text-xs leading-5 text-itri-700" title={value}>{value || "—"}</p>;
+  return <textarea aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className="w-full resize-y rounded border border-itri-200 bg-white px-2 py-1.5 text-xs leading-5 outline-none focus:border-itri-500 focus:ring-2 focus:ring-itri-500/20" />;
+}
+
+function MeasurementEditor({ measurement, criteria, editing, label, onMeasurementChange, onCriteriaChange }: {
+  measurement: string;
+  criteria: ModelSubparameter["measurementCriteria"];
+  editing: boolean;
+  label: string;
+  onMeasurementChange: (value: string) => void;
+  onCriteriaChange: (criteria: ModelSubparameter["measurementCriteria"]) => void;
+}) {
+  function updateCriterion(index: number, changes: Partial<ModelSubparameter["measurementCriteria"][number]>) {
+    onCriteriaChange(criteria.map((criterion, criterionIndex) => criterionIndex === index ? { ...criterion, ...changes } : criterion));
+  }
+  function expression(criterion: ModelSubparameter["measurementCriteria"][number]) {
+    const op = { GT: ">", GTE: "≥", EQ: "=", LT: "<", LTE: "≤", BETWEEN: "between" }[criterion.operator];
+    return criterion.operator === "BETWEEN" ? `${criterion.value} ≤ value < ${criterion.upperValue}` : `value ${op} ${criterion.value}`;
+  }
+  const operators: Array<{ value: MeasurementOperator; label: string }> = [
+    { value: "GT", label: "> Greater than" }, { value: "GTE", label: "≥ Greater than or equal" },
+    { value: "EQ", label: "= Equal to" }, { value: "LT", label: "< Less than" },
+    { value: "LTE", label: "≤ Less than or equal" }, { value: "BETWEEN", label: "Between" },
+  ];
+  if (!editing) return (
+    <div className="space-y-1.5 text-xs leading-5">
+      <p className="text-itri-700">{measurement || "—"}</p>
+      {criteria.length > 0 && <ol className="list-inside list-decimal space-y-0.5 text-itri-800">
+        {criteria.map((criterion) => <li key={criterion.id}>{criterion.description || expression(criterion)} <span className="text-itri-600">({expression(criterion)})</span> <span className="font-semibold">Score {criterion.score}/5</span></li>)}
+      </ol>}
+    </div>
+  );
+  return (
+    <div className="space-y-2">
+      <textarea aria-label={label} value={measurement} onChange={(event) => onMeasurementChange(event.target.value)} rows={2} placeholder="Describe the measured value and its unit" className="w-full resize-y rounded border border-itri-200 bg-white px-2 py-1.5 text-xs leading-5 outline-none focus:border-itri-500 focus:ring-2 focus:ring-itri-500/20" />
+      <p className="text-[11px] leading-4 text-itri-600">Rules compare the submitted numeric value. Default general criteria use a 0–100 scale; set boundaries to match this metric’s unit.</p>
+      <ol className="space-y-2">
+        {criteria.map((criterion, index) => (
+          <li key={criterion.id} className="space-y-1.5 rounded border border-itri-100 bg-white p-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-itri-600">{index + 1}.</span>
+              <select aria-label={`${label} criterion ${index + 1} operator`} value={criterion.operator} onChange={(event) => {
+                const operator = event.target.value as MeasurementOperator;
+                updateCriterion(index, { operator, upperValue: operator === "BETWEEN" ? (criterion.upperValue ?? criterion.value + 1) : null });
+              }} className="min-w-0 flex-1 rounded border border-itri-200 bg-white px-1.5 py-1 text-xs">
+                {operators.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <label className="flex items-center gap-1 text-xs text-itri-700">{criterion.operator === "BETWEEN" ? "From" : "Value"}
+                <input aria-label={`${label} criterion ${index + 1} boundary`} type="number" step="any" value={criterion.value} onChange={(event) => updateCriterion(index, { value: Number(event.target.value) })} className="w-20 rounded border border-itri-200 bg-white px-1.5 py-1 text-xs" />
+              </label>
+              {criterion.operator === "BETWEEN" && <label className="flex items-center gap-1 text-xs text-itri-700">To
+                <input aria-label={`${label} criterion ${index + 1} upper boundary`} type="number" step="any" value={criterion.upperValue ?? ""} onChange={(event) => updateCriterion(index, { upperValue: Number(event.target.value) })} className="w-20 rounded border border-itri-200 bg-white px-1.5 py-1 text-xs" />
+              </label>}
+              <label className="flex items-center gap-1 text-xs text-itri-700">Score
+                <input aria-label={`${label} criterion ${index + 1} score`} type="number" min="1" max="5" step="1" value={criterion.score} onChange={(event) => updateCriterion(index, { score: Number(event.target.value) })} className="w-14 rounded border border-itri-200 bg-white px-1.5 py-1 text-xs" />
+              </label>
+              <button type="button" aria-label={`Remove ${label} criterion ${index + 1}`} onClick={() => onCriteriaChange(criteria.filter((_, criterionIndex) => criterionIndex !== index))} className="grid size-7 shrink-0 place-items-center rounded text-score-bad hover:bg-score-bad-soft"><TrashIcon /></button>
+            </div>
+            <input aria-label={`${label} criterion ${index + 1} description`} value={criterion.description} onChange={(event) => updateCriterion(index, { description: event.target.value })} placeholder={`${expression(criterion)} → score ${criterion.score}`} className="w-full rounded border border-itri-200 bg-white px-2 py-1 text-xs" />
+          </li>
+        ))}
+      </ol>
+      <button type="button" onClick={() => onCriteriaChange([...criteria, { id: crypto.randomUUID(), description: "", operator: "GTE", value: 0, upperValue: null, score: 1, sortOrder: criteria.length }])} className="inline-flex items-center gap-1 text-xs font-semibold text-score-good hover:underline"><PlusIcon /> Add criterion</button>
+    </div>
   );
 }
 
